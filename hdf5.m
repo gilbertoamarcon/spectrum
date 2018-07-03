@@ -5,7 +5,7 @@ clc;
 DSET='/glider/bob/';
 FILE='/home/gil/sea/ship-pat/bob.h5';
 BINS = 0:1:50;
-DST = 0.25;
+DST = 0.50;
 
 % Loading data
 datetime	= h5read(FILE,strcat(DSET,'datetime'));
@@ -15,7 +15,7 @@ depth		= h5read(FILE,strcat(DSET,'depth'));
 temperature	= h5read(FILE,strcat(DSET,'temperature'));
 
 % Cropping
-beg			= 20000;
+beg			= 35000;
 lim			= 50000;
 datetime	= datetime(beg:lim);
 longitude	= longitude(beg:lim);
@@ -65,7 +65,7 @@ resampled_temperatures		= vars(:,3:end);
 
 
 
-smooth_temps = gaussian_filter(resampled_temperatures,DST,5000);
+smooth_temps = gaussian_filter(resampled_temperatures,DST,5000,3);
 
 
 % sobel filtering
@@ -88,21 +88,27 @@ plot(resampled_distance,1000*sobel,'-r')
 
 
 
-
-% Remove NaNs and Inf
-function smooth_temps = gaussian_filter(inputs,fs,window_width)
-	wsize = window_width/fs;
-	gaussian = 2*gausswin(wsize)/wsize;
-	inputs = padarray(inputs,wsize,'replicate');
-	smooth_temps = filter(gaussian,1,inputs);
-	smooth_temps = smooth_temps(wsize+1+0.5*wsize:end-wsize+0.5*wsize,:);
-end
-
-
 % Remove NaNs and Inf
 function mat = cleanup(mat)
 	mat(any(isnan(mat), 2), :) = [];
 	mat(any(isinf(mat), 2), :) = [];
+end
+
+
+
+function out = depth_separate_temperature(depth,in,bins)
+	len = length(in);
+	num_bins = length(bins)-1;
+	out = zeros(len,num_bins);
+	for i=1:len
+		for j=1:num_bins
+			if depth(i) >= bins(j) && depth(i) < bins(j+1)
+				out(i,j) = in(i);
+			else
+				out(i,j) = NaN;
+			end
+		end
+	end
 end
 
 
@@ -167,30 +173,22 @@ function [new_distance,new_vars] = distance_resample(distance, avg_dst, vars)
 
 end
 
-function out = depth_separate_temperature(depth,in,bins)
-	len = length(in);
-	num_bins = length(bins)-1;
-	out = zeros(len,num_bins);
-	for i=1:len
-		for j=1:num_bins
-			if depth(i) >= bins(j) && depth(i) < bins(j+1)
-				out(i,j) = in(i);
-			else
-				out(i,j) = NaN;
-			end
-		end
-	end
+% Remove NaNs and Inf
+function smooth_temps = gaussian_filter(inputs,fs,window_width,stdev)
+	wsize = window_width/fs;
+	gaussian = gausswin(wsize,stdev);
+	gaussian = gaussian/sum(gaussian);
+	inputs = padarray(inputs,wsize,'replicate');
+	smooth_temps = filter(gaussian,1,inputs);
+	smooth_temps = smooth_temps(wsize+1+0.5*wsize:end-wsize+0.5*wsize,:);
 end
-
 
 function out = sobel_filter(in)
 	len = length(in);
-	sobel = zeros(len,1);
-	sobel(1) = -1;
-	sobel(2) = 1;
-	out = abs(conv(in,sobel));
-	out(1) = 0;
-	out = out(1:len);
+	out = zeros(len,1);
+	for i=2:len
+		out(i) = abs(in(i)-in(i-1));
+	end
 	out = out/norm(out);
 end
 
