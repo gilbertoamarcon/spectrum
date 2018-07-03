@@ -1,23 +1,27 @@
-clear all 
-clc
+clear all;
+close all;
+clc;
 
 DSET='/glider/bob/';
 FILE='/home/gil/sea/ship-pat/bob.h5';
 BINS = 0:1:50;
-DST = 0.5;
+DST = 0.25;
 
 % Loading data
+datetime	= h5read(FILE,strcat(DSET,'datetime'));
 longitude	= h5read(FILE,strcat(DSET,'longitude'));
 latitude	= h5read(FILE,strcat(DSET,'latitude'));
 depth		= h5read(FILE,strcat(DSET,'depth'));
 temperature	= h5read(FILE,strcat(DSET,'temperature'));
 
 % Cropping
-lim=100000;
-longitude	= longitude(1:lim);
-latitude	= latitude(1:lim);
-depth		= depth(1:lim);
-temperature	= temperature(1:lim);
+beg			= 20000;
+lim			= 50000;
+datetime	= datetime(beg:lim);
+longitude	= longitude(beg:lim);
+latitude	= latitude(beg:lim);
+depth		= depth(beg:lim);
+temperature	= temperature(beg:lim);
 
 
 % Ad-hoc temperature filering
@@ -27,13 +31,22 @@ for i=1:length(temperature)
 	end
 end
 
+
+
+
+
+
+
+
+
 % Remove NaNs and Inf
 disp('filter')
-cleanup_mat = cleanup([longitude latitude depth temperature]);
-longitude	= cleanup_mat(:,1);
-latitude	= cleanup_mat(:,2);
-depth		= cleanup_mat(:,3);
-temperature	= cleanup_mat(:,4);
+cleanup_mat = cleanup([datetime longitude latitude depth temperature]);
+datetime	= cleanup_mat(:,1);
+longitude	= cleanup_mat(:,2);
+latitude	= cleanup_mat(:,3);
+depth		= cleanup_mat(:,4);
+temperature	= cleanup_mat(:,5);
 
 % Depth-separated data
 temperatures = depth_separate_temperature(depth,temperature,BINS);
@@ -42,7 +55,6 @@ temperatures = depth_separate_temperature(depth,temperature,BINS);
 disp('compute_distance_array')
 distance = compute_distance_array(longitude, latitude);
 
-
 % Resample variables to a fixed sampling rate, relative to distance
 disp('distance_resample')
 [resampled_distance,vars]	= distance_resample(distance, DST, [depth temperature temperatures]);
@@ -50,21 +62,42 @@ resampled_depth				= vars(:,1);
 resampled_temperature		= vars(:,2);
 resampled_temperatures		= vars(:,3:end);
 
-% Gaussian filtering
-disp('lowpass')
-wsize = 10000;
-gaussian_100 = 2*gausswin(wsize)/wsize;
-smooth_temps = filter(gaussian_100,1,resampled_temperatures);
+
+
+
+smooth_temps = gaussian_filter(resampled_temperatures,DST,5000);
+
 
 % sobel filtering
 disp('sobel')
 sobel = sobel_filter(smooth_temps(:,20));
 
+
+
 disp('plot')
 hold on;
-% scatter(resampled_distance,resampled_depth,[],resampled_temperature,'.');
-plot(resampled_distance,smooth_temps(:,20)-20,'-k')
-plot(resampled_distance,10000*sobel,'-r')
+scatter(resampled_distance,resampled_depth,[],resampled_temperature,'.');
+plot(resampled_distance,resampled_temperatures(:,20),'-k')
+plot(resampled_distance,smooth_temps(:,20),'-b')
+plot(resampled_distance,1000*sobel,'-r')
+
+
+
+
+
+
+
+
+
+% Remove NaNs and Inf
+function smooth_temps = gaussian_filter(inputs,fs,window_width)
+	wsize = window_width/fs;
+	gaussian = 2*gausswin(wsize)/wsize;
+	inputs = padarray(inputs,wsize,'replicate');
+	smooth_temps = filter(gaussian,1,inputs);
+	smooth_temps = smooth_temps(wsize+1+0.5*wsize:end-wsize+0.5*wsize,:);
+end
+
 
 % Remove NaNs and Inf
 function mat = cleanup(mat)
@@ -89,8 +122,7 @@ function distance = compute_distance_array(longitude, latitude)
 	len			= length(longitude);
 	distance	= zeros(len,1);
 	for i=2:len
-		ind_dsts(i) = lat_lon_distance(latitude(i-1),longitude(i-1),latitude(i),longitude(i));
-		distance(i) = distance(i-1) + ind_dsts(i);
+		distance(i) = distance(i-1) + lat_lon_distance(latitude(i-1),longitude(i-1),latitude(i),longitude(i));
 	end
 end
 
@@ -131,6 +163,7 @@ function [new_distance,new_vars] = distance_resample(distance, avg_dst, vars)
 		end
 
 	end
+	new_vars(1,:) = new_vars(2,:);
 
 end
 
@@ -156,7 +189,8 @@ function out = sobel_filter(in)
 	sobel(1) = -1;
 	sobel(2) = 1;
 	out = abs(conv(in,sobel));
-	% out = conv(in,sobel);
+	out(1) = 0;
 	out = out(1:len);
+	out = out/norm(out);
 end
 
