@@ -2,13 +2,15 @@ clear all;
 close all;
 clc;
 
-INPUT_FILE='/home/gil/sea/ship-pat/bob.h5';
+INPUT_FILE='/home/gil/sea/all.h5';
 INPUT_DSET='/glider/bob/';
-OUTPUT_FILE='/home/gil/sea/merge.h5';
-OUTPUT_DSET='/glider/merge/';
+
+OUTPUT_FILE='/home/gil/sea/relevance.h5';
+OUTPUT_DSET='/glider/relevance/';
 
 BINS = 0:1:50;
-DST = 2.0;
+DST = 0.25;
+DSAMPLE = 100;
 
 % Loading data
 datetime	= h5read(INPUT_FILE,strcat(INPUT_DSET,'datetime'));
@@ -74,18 +76,23 @@ resampled_temperatures		= vars(:,6:end);
 smooth_temps = gaussian_filter(resampled_temperatures,DST,5000,3);
 
 % Difference filter
-sobel = sobel_filter(smooth_temps);
+sobel = difference_filter(smooth_temps);
 
 
-% disp('plot')
-% hold on;
-% scatter(resampled_distance,resampled_depth,[],resampled_temperature,'.');
-% for i=1:length(BINS)-1
-% 	% plot(resampled_distance,resampled_temperatures(:,i)+BINS(i),'-k')
-% 	% plot(resampled_distance,smooth_temps(:,i)+BINS(i),'-b')
-% 	plot(resampled_distance,100*sobel(:,i)+BINS(i),'-r')
-% end
-
+disp('plot')
+hold on;
+axis([min(resampled_distance) max(resampled_distance) 5 50])
+scatter(resampled_distance,resampled_depth,50,resampled_temperature,'filled');
+for i=1:length(BINS)-1
+	% plot(resampled_distance,resampled_temperatures(:,i)+BINS(i),'-k')
+	% plot(resampled_distance,smooth_temps(:,i)+BINS(i),'-b')
+	plot(resampled_distance,1*sobel(:,i)+BINS(i),'-r')
+end
+legend('Temperature (Celsius)','Relevance Factor');
+xlabel('Horizontal Odometry (meters)');
+ylabel('Depth (meters)');
+c = colorbar;
+c.Label.String = 'Temperature (Celsius)';
 
 
 
@@ -98,10 +105,17 @@ for i=1:length(BINS)-1
 	odat = [olon; resampled_datetime];
 	olon = [olon; resampled_longitude];
 	olat = [olat; resampled_latitude];
-	odep = [odep; ones(size(resampled_latitude))*BINS(i)];
+	odep = [odep; ones(size(resampled_datetime))*BINS(i)];
 	orel = [orel; sobel(:,i)];
 end
-scatter3(olon,olat,odep,[],orel,'.');
+
+odat = odat(1:DSAMPLE:end);
+olon = olon(1:DSAMPLE:end);
+olat = olat(1:DSAMPLE:end);
+odep = odep(1:DSAMPLE:end);
+orel = orel(1:DSAMPLE:end);
+
+% scatter3(olon,olat,odep,[],orel,'.');
 
 dset_len = length(odat);
 
@@ -216,7 +230,7 @@ function smooth_temps = gaussian_filter(inputs,fs,window_width,stdev)
 	smooth_temps = smooth_temps(wsize+1+0.5*wsize:end-wsize+0.5*wsize,:);
 end
 
-function out = sobel_filter(in)
+function out = difference_filter(in)
 	len = length(in);
 	out = zeros(size(in));
 	for i=2:len
