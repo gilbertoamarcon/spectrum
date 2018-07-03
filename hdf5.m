@@ -2,17 +2,20 @@ clear all;
 close all;
 clc;
 
-DSET='/glider/bob/';
-FILE='/home/gil/sea/ship-pat/bob.h5';
+INPUT_FILE='/home/gil/sea/ship-pat/bob.h5';
+INPUT_DSET='/glider/bob/';
+OUTPUT_FILE='/home/gil/sea/merge.h5';
+OUTPUT_DSET='/glider/merge/';
+
 BINS = 0:1:50;
-DST = 0.50;
+DST = 2.0;
 
 % Loading data
-datetime	= h5read(FILE,strcat(DSET,'datetime'));
-longitude	= h5read(FILE,strcat(DSET,'longitude'));
-latitude	= h5read(FILE,strcat(DSET,'latitude'));
-depth		= h5read(FILE,strcat(DSET,'depth'));
-temperature	= h5read(FILE,strcat(DSET,'temperature'));
+datetime	= h5read(INPUT_FILE,strcat(INPUT_DSET,'datetime'));
+longitude	= h5read(INPUT_FILE,strcat(INPUT_DSET,'longitude'));
+latitude	= h5read(INPUT_FILE,strcat(INPUT_DSET,'latitude'));
+depth		= h5read(INPUT_FILE,strcat(INPUT_DSET,'depth'));
+temperature	= h5read(INPUT_FILE,strcat(INPUT_DSET,'temperature'));
 
 % Cropping
 beg			= 35000;
@@ -57,33 +60,63 @@ distance = compute_distance_array(longitude, latitude);
 
 % Resample variables to a fixed sampling rate, relative to distance
 disp('distance_resample')
-[resampled_distance,vars]	= distance_resample(distance, DST, [depth temperature temperatures]);
-resampled_depth				= vars(:,1);
-resampled_temperature		= vars(:,2);
-resampled_temperatures		= vars(:,3:end);
+[resampled_distance,vars]	= distance_resample(distance, DST, [datetime longitude latitude depth temperature temperatures]);
+resampled_datetime			= vars(:,1);
+resampled_longitude			= vars(:,2);
+resampled_latitude			= vars(:,3);
+resampled_depth				= vars(:,4);
+resampled_temperature		= vars(:,5);
+resampled_temperatures		= vars(:,6:end);
 
 
 
-
+% Gaussian filter
 smooth_temps = gaussian_filter(resampled_temperatures,DST,5000,3);
 
-
-% sobel filtering
-disp('sobel')
-sobel = sobel_filter(smooth_temps(:,20));
+% Difference filter
+sobel = sobel_filter(smooth_temps);
 
 
-
-disp('plot')
-hold on;
-scatter(resampled_distance,resampled_depth,[],resampled_temperature,'.');
-plot(resampled_distance,resampled_temperatures(:,20),'-k')
-plot(resampled_distance,smooth_temps(:,20),'-b')
-plot(resampled_distance,1000*sobel,'-r')
-
+% disp('plot')
+% hold on;
+% scatter(resampled_distance,resampled_depth,[],resampled_temperature,'.');
+% for i=1:length(BINS)-1
+% 	% plot(resampled_distance,resampled_temperatures(:,i)+BINS(i),'-k')
+% 	% plot(resampled_distance,smooth_temps(:,i)+BINS(i),'-b')
+% 	plot(resampled_distance,100*sobel(:,i)+BINS(i),'-r')
+% end
 
 
 
+
+odat = [];
+olon = [];
+olat = [];
+odep = [];
+orel = [];
+for i=1:length(BINS)-1
+	odat = [olon; resampled_datetime];
+	olon = [olon; resampled_longitude];
+	olat = [olat; resampled_latitude];
+	odep = [odep; ones(size(resampled_latitude))*BINS(i)];
+	orel = [orel; sobel(:,i)];
+end
+scatter3(olon,olat,odep,[],orel,'.');
+
+dset_len = length(odat);
+
+delete(OUTPUT_FILE);
+h5create(OUTPUT_FILE,strcat(OUTPUT_DSET,'datetime'),[1 dset_len]);
+h5create(OUTPUT_FILE,strcat(OUTPUT_DSET,'longitude'),[1 dset_len]);
+h5create(OUTPUT_FILE,strcat(OUTPUT_DSET,'latitude'),[1 dset_len]);
+h5create(OUTPUT_FILE,strcat(OUTPUT_DSET,'depth'),[1 dset_len]);
+h5create(OUTPUT_FILE,strcat(OUTPUT_DSET,'relevance'),[1 dset_len]);
+
+h5write(OUTPUT_FILE,strcat(OUTPUT_DSET,'datetime'),odat');
+h5write(OUTPUT_FILE,strcat(OUTPUT_DSET,'longitude'),olon');
+h5write(OUTPUT_FILE,strcat(OUTPUT_DSET,'latitude'),olat');
+h5write(OUTPUT_FILE,strcat(OUTPUT_DSET,'depth'),odep');
+h5write(OUTPUT_FILE,strcat(OUTPUT_DSET,'relevance'),orel');
 
 
 
@@ -185,10 +218,10 @@ end
 
 function out = sobel_filter(in)
 	len = length(in);
-	out = zeros(len,1);
+	out = zeros(size(in));
 	for i=2:len
-		out(i) = abs(in(i)-in(i-1));
+		out(i,:) = abs(in(i,:)-in(i-1,:));
 	end
-	out = out/norm(out);
+	out = out/max(max(out));
 end
 
